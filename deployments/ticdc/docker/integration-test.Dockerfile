@@ -1,6 +1,6 @@
 # Specify the image architecture explicitly,
 # otherwise it will not work correctly on other architectures.
-FROM amd64/centos:centos7 as downloader
+FROM rockylinux:8 as downloader
 
 ARG BRANCH
 ENV BRANCH=$BRANCH
@@ -21,8 +21,8 @@ USER root
 WORKDIR /root/download
 
 # Installing dependencies.
-RUN yum install -y \
-	wget
+RUN dnf install -y \
+    wget
 COPY ./scripts/download-integration-test-binaries.sh .
 # Download all binaries into bin dir.
 RUN ./download-integration-test-binaries.sh $BRANCH $COMMUNITY $VERSION $OS $ARCH
@@ -32,44 +32,51 @@ RUN ls ./bin
 ENV GOLANG_VERSION 1.23.0
 ENV GOLANG_DOWNLOAD_URL https://dl.google.com/go/go$GOLANG_VERSION.linux-amd64.tar.gz
 RUN curl -fsSL "$GOLANG_DOWNLOAD_URL" -o golang.tar.gz \
-	&& tar -C /usr/local -xzf golang.tar.gz \
-	&& rm golang.tar.gz
+    && tar -C /usr/local -xzf golang.tar.gz \
+    && rm golang.tar.gz
 
-FROM amd64/centos:centos7
+FROM rockylinux:8
 
 USER root
 WORKDIR /root
 
+# Enable additional repositories for development tools.
+RUN dnf install -y dnf-plugins-core
+RUN dnf config-manager --set-enabled powertools
+
 # Installing dependencies.
-RUN yum install -y \
-	git \
-	bash-completion \
-	wget \
+RUN dnf install -y \
+    git \
+    bash-completion \
+    wget \
     which \
-	gcc \
-	make \
+    gcc \
+    make \
     curl \
     tar \
-    musl-dev \
-	sudo \
-	python3 \
+    glibc-devel \
+    sudo \
+    python3 \
     psmisc \
-    procps
-RUN wget http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
-RUN yum install -y epel-release-latest-7.noarch.rpm
-RUN yum --enablerepo=epel install -y s3cmd
-# Install mysql client.
-RUN rpm -ivh https://repo.mysql.com/mysql57-community-release-el7-11.noarch.rpm
-# See: https://support.cpanel.net/hc/en-us/articles/4419382481815?input_string=gpg+keys+problem+with+mysql+5.7
+    procps-ng
+# Enable EPEL repository for additional packages.
+RUN dnf install -y epel-release
+RUN dnf --enablerepo=epel install -y s3cmd
+# Install MySQL client.
+RUN dnf install -y https://repo.mysql.com/mysql80-community-release-el8-9.noarch.rpm
 RUN rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2022
-RUN yum install mysql-community-client.x86_64 -y
+# Enable MySQL 8.0 module and install the client.
+# RUN dnf module enable -y mysql:8.0
+# RUN dnf install -y mysql-community-client
+# Install MariaDB client as a fallback for MySQL compatibility.
+RUN dnf install -y mariadb-connector-c mariadb
 
-# install java to run the schema regsitry for the avro case.
-RUN yum install -y \
+# Install Java to run the schema registry for the Avro case.
+RUN dnf install -y \
     java-1.8.0-openjdk \
     java-1.8.0-openjdk-devel
 
-# Copy go form downloader.
+# Copy Go from downloader.
 COPY --from=downloader /usr/local/go /usr/local/go
 ENV GOPATH /go
 ENV GOROOT /usr/local/go
